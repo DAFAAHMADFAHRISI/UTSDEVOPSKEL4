@@ -12,7 +12,7 @@ services:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/Axon sales - Mysql Database.sql:/docker-entrypoint-initdb.d/init.sql
     networks: [ backend ]
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password_123}" ]
@@ -37,7 +37,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./Frontend
       dockerfile: Dockerfile
     container_name: axon_sales_frontend
     restart: always
@@ -71,4 +71,3 @@ volumes:
 networks:
   frontend:
   backend:
-  
