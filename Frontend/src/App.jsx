@@ -7,9 +7,12 @@ import {
   TrendingUp,
   Package,
   RefreshCw,
-  Server,
   AlertCircle,
   BarChart3,
+  PieChart as PieIcon,
+  Globe,
+  Award,
+  Activity,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -21,16 +24,40 @@ import {
   CartesianGrid,
   BarChart,
   Bar,
-  Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 
-// Pola API_BASE_URL sesuai panduan Tahap 4
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const PRODUCT_COLORS = [
+  '#3b82f6', // Classic Cars (Blue)
+  '#10b981', // Vintage Cars (Emerald)
+  '#f59e0b', // Motorcycles (Amber)
+  '#8b5cf6', // Planes (Purple)
+  '#ec4899', // Trucks and Buses (Pink)
+  '#06b6d4', // Ships (Cyan)
+  '#f97316', // Trains (Orange)
+];
+
+const STATUS_COLORS = {
+  Shipped: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', border: 'rgba(16, 185, 129, 0.3)' },
+  Resolved: { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.15)', border: 'rgba(6, 182, 212, 0.3)' },
+  'In Process': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)' },
+  'On Hold': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.3)' },
+  Disputed: { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)' },
+  Cancelled: { color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', border: 'rgba(244, 63, 94, 0.3)' },
+};
 
 function App() {
   const [summary, setSummary] = useState(null);
   const [monthlySales, setMonthlySales] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
+  const [productLines, setProductLines] = useState([]);
+  const [orderStatuses, setOrderStatuses] = useState([]);
+  const [countrySales, setCountrySales] = useState([]);
+  const [topSalesReps, setTopSalesReps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -39,24 +66,34 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, monthlyRes, productsRes] = await Promise.all([
+      const [
+        summaryRes,
+        monthlyRes,
+        productsRes,
+        productLinesRes,
+        orderStatusRes,
+        countryRes,
+        repsRes,
+      ] = await Promise.all([
         axios.get(`${API_BASE_URL}/sales-summary`),
         axios.get(`${API_BASE_URL}/monthly-sales`),
         axios.get(`${API_BASE_URL}/top-products?limit=5`),
+        axios.get(`${API_BASE_URL}/revenue-by-productline`),
+        axios.get(`${API_BASE_URL}/order-status-distribution`),
+        axios.get(`${API_BASE_URL}/sales-by-country?limit=8`),
+        axios.get(`${API_BASE_URL}/top-sales-reps?limit=5`),
       ]);
 
-      // Tangani format jika dibungkus data atau langsung
-      const summaryData = summaryRes.data?.data || summaryRes.data;
-      const monthlyData = Array.isArray(monthlyRes.data)
-        ? monthlyRes.data
-        : monthlyRes.data?.data || [];
-      const productsData = Array.isArray(productsRes.data)
-        ? productsRes.data
-        : productsRes.data?.data || [];
+      const unwrap = (res) => (Array.isArray(res.data) ? res.data : res.data?.data || []);
 
-      setSummary(summaryData);
-      setMonthlySales(monthlyData);
-      setTopProducts(productsData);
+      setSummary(summaryRes.data?.data || summaryRes.data);
+      setMonthlySales(unwrap(monthlyRes));
+      setTopProducts(unwrap(productsRes));
+      setProductLines(unwrap(productLinesRes));
+      setOrderStatuses(unwrap(orderStatusRes));
+      setCountrySales(unwrap(countryRes));
+      setTopSalesReps(unwrap(repsRes));
+
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
@@ -79,7 +116,7 @@ function App() {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 0,
     }).format(val);
   };
 
@@ -88,7 +125,7 @@ function App() {
     return new Intl.NumberFormat('en-US').format(val);
   };
 
-  const CustomTooltip = ({ active, payload, label }) => {
+  const CustomAreaTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
         <div className="custom-tooltip">
@@ -101,6 +138,21 @@ function App() {
               Orders: {formatNumber(payload[1]?.value)}
             </p>
           )}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const CustomPieTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="custom-tooltip">
+          <p className="tooltip-title">{data.productLine}</p>
+          <p className="tooltip-value">Omset: {formatCurrency(data.totalRevenue)}</p>
+          <p className="tooltip-orders">Porsi: {data.percentage}%</p>
+          <p className="tooltip-orders">Unit: {formatNumber(data.totalQuantity)} terjual</p>
         </div>
       );
     }
@@ -155,7 +207,7 @@ function App() {
         <div className="state-container">
           <div className="spinner"></div>
           <p style={{ color: 'var(--text-secondary)' }}>
-            Memuat data penjualan dari Docker Backend...
+            Memuat data analitik dan visualisasi penjualan...
           </p>
         </div>
       ) : (
@@ -208,7 +260,7 @@ function App() {
             </div>
           </section>
 
-          {/* Charts Section */}
+          {/* Section 1: Tren Penjualan & Top 5 Produk */}
           <section className="charts-grid">
             {/* Monthly Sales Trend */}
             <div className="card">
@@ -219,7 +271,7 @@ function App() {
                     Tren Penjualan Bulanan (Monthly Sales)
                   </h2>
                   <div className="card-subtitle">
-                    Pergerakan revenue dan volume transaksi dari waktu ke waktu
+                    Pergerakan omset dan volume pesanan dari waktu ke waktu
                   </div>
                 </div>
               </div>
@@ -248,7 +300,7 @@ function App() {
                       tickLine={false}
                       tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
                     />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomAreaTooltip />} />
                     <Area
                       type="monotone"
                       dataKey="totalSales"
@@ -263,7 +315,7 @@ function App() {
               </div>
             </div>
 
-            {/* Top Products */}
+            {/* Top 5 Best-Selling Products */}
             <div className="card">
               <div className="card-header">
                 <div>
@@ -286,7 +338,7 @@ function App() {
                         {product.productName}
                       </div>
                       <div className="product-category">
-                        {product.productLine} &bull; Code: {product.productCode}
+                        {product.productLine} &bull; SKU: {product.productCode}
                       </div>
                     </div>
                     <div className="product-stats">
@@ -303,7 +355,227 @@ function App() {
             </div>
           </section>
 
-          {/* Top Products Revenue Comparison BarChart */}
+          {/* Section 2: Kategori Produk (Donut) & Status Pemenuhan Pesanan */}
+          <section className="grid-2-col">
+            {/* Revenue by Product Line Donut Chart */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">
+                    <PieIcon size={20} color="#f59e0b" />
+                    Distribusi Revenue per Kategori Produk
+                  </h2>
+                  <div className="card-subtitle">
+                    Porsi kontribusi lini produk terhadap total omset
+                  </div>
+                </div>
+              </div>
+
+              <div className="donut-layout">
+                <div style={{ width: '220px', height: '220px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={productLines}
+                        dataKey="totalRevenue"
+                        nameKey="productLine"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={4}
+                      >
+                        {productLines.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={PRODUCT_COLORS[index % PRODUCT_COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomPieTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="donut-legend">
+                  {productLines.map((pl, idx) => (
+                    <div key={pl.productLine || idx} className="legend-item">
+                      <div className="legend-left">
+                        <span
+                          className="legend-dot"
+                          style={{
+                            backgroundColor: PRODUCT_COLORS[idx % PRODUCT_COLORS.length],
+                          }}
+                        ></span>
+                        <span className="legend-name" title={pl.productLine}>
+                          {pl.productLine}
+                        </span>
+                      </div>
+                      <div className="legend-right">
+                        <span className="legend-pct">{pl.percentage}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Order Fulfillment Status */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">
+                    <Activity size={20} color="#06b6d4" />
+                    Status Pemenuhan Pesanan (Fulfillment)
+                  </h2>
+                  <div className="card-subtitle">
+                    Kesehatan logistik pengiriman & status operasional
+                  </div>
+                </div>
+              </div>
+
+              <div className="status-cards-grid">
+                {orderStatuses.map((os) => {
+                  const theme = STATUS_COLORS[os.status] || {
+                    color: '#9ca3af',
+                    bg: 'rgba(156, 163, 175, 0.1)',
+                    border: 'rgba(156, 163, 175, 0.2)',
+                  };
+                  return (
+                    <div key={os.status} className="status-card-item">
+                      <div
+                        className="status-pill"
+                        style={{
+                          color: theme.color,
+                          backgroundColor: theme.bg,
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        {os.status}
+                      </div>
+                      <div className="status-count">{formatNumber(os.totalOrders)}</div>
+                      <div className="status-bar-bg">
+                        <div
+                          className="status-bar-fill"
+                          style={{
+                            width: `${Math.min(100, Math.max(10, os.percentage))}%`,
+                            backgroundColor: theme.color,
+                          }}
+                        ></div>
+                      </div>
+                      <div className="status-sub">{os.percentage}% dari total pesanan</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          {/* Section 3: Pasar Global (Sales by Country) & Top Sales Reps */}
+          <section className="grid-2-col">
+            {/* Sales by Country Horizontal Bar */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">
+                    <Globe size={20} color="#3b82f6" />
+                    Top 8 Negara Pasar Terbesar (Global Sales)
+                  </h2>
+                  <div className="card-subtitle">
+                    Negara penyumbang omset penjualan tertinggi
+                  </div>
+                </div>
+              </div>
+
+              <div className="chart-wrapper" style={{ height: '300px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    layout="vertical"
+                    data={countrySales}
+                    margin={{ top: 10, right: 30, left: 40, bottom: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis
+                      type="number"
+                      stroke="#6b7280"
+                      fontSize={11}
+                      tickLine={false}
+                      tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="country"
+                      stroke="#9ca3af"
+                      fontSize={12}
+                      tickLine={false}
+                      width={70}
+                    />
+                    <Tooltip
+                      formatter={(val) => [formatCurrency(val), 'Revenue']}
+                      contentStyle={{
+                        backgroundColor: 'rgba(17, 24, 39, 0.95)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: '0.5rem',
+                        color: '#fff',
+                      }}
+                    />
+                    <Bar
+                      dataKey="totalRevenue"
+                      name="Revenue ($)"
+                      fill="#38bdf8"
+                      radius={[0, 6, 6, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Top Sales Representatives */}
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">
+                    <Award size={20} color="#f59e0b" />
+                    Top Sales Representative Leaderboard
+                  </h2>
+                  <div className="card-subtitle">
+                    Staf penjual dengan perolehan omset tertinggi
+                  </div>
+                </div>
+              </div>
+
+              <div className="reps-list">
+                {topSalesReps.map((rep, idx) => {
+                  let rankClass = 'rank-other';
+                  if (idx === 0) rankClass = 'rank-gold';
+                  else if (idx === 1) rankClass = 'rank-silver';
+                  else if (idx === 2) rankClass = 'rank-bronze';
+
+                  return (
+                    <div key={rep.salesRepName || idx} className="rep-item">
+                      <div className={`rep-rank ${rankClass}`}>
+                        {idx + 1}
+                      </div>
+                      <div className="rep-info">
+                        <div className="rep-name">{rep.salesRepName}</div>
+                        <div className="rep-meta">
+                          {rep.jobTitle} &bull; {rep.totalClients} Klien &bull; {rep.totalOrders} Order
+                        </div>
+                      </div>
+                      <div className="rep-revenue">
+                        <div className="rep-revenue-val">
+                          {formatCurrency(rep.totalRevenue)}
+                        </div>
+                        <div className="rep-revenue-sub">Omset deal</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          {/* Section 4: Komparasi Omset 5 Produk Terlaris */}
           <section className="card" style={{ marginBottom: '2rem' }}>
             <div className="card-header">
               <div>
@@ -312,11 +584,11 @@ function App() {
                   Komparasi Omset Produk Terlaris
                 </h2>
                 <div className="card-subtitle">
-                  Perbandingan nominal penjualan 5 produk teratas
+                  Perbandingan nominal pendapatan 5 produk teratas
                 </div>
               </div>
             </div>
-            <div className="chart-wrapper" style={{ height: '280px' }}>
+            <div className="chart-wrapper" style={{ height: '260px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={topProducts}
