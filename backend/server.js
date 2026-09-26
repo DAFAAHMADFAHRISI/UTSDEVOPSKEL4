@@ -29,6 +29,10 @@ app.get('/', (req, res) => {
       '/api/sales-summary',
       '/api/top-products',
       '/api/monthly-sales',
+      '/api/revenue-by-productline',
+      '/api/order-status-distribution',
+      '/api/sales-by-country',
+      '/api/top-sales-reps',
     ],
   });
 });
@@ -181,6 +185,152 @@ app.get('/api/monthly-sales', async (req, res) => {
   } catch (error) {
     console.error('[Error] /api/monthly-sales:', error.message);
     res.status(500).json({ error: 'Failed to retrieve monthly sales', details: error.message });
+  }
+});
+
+// Endpoint 4: Revenue per Kategori Produk (Product Line Share)
+app.get('/api/revenue-by-productline', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        p.productLine,
+        ROUND(SUM(od.quantityOrdered * od.priceEach), 2) AS totalRevenue,
+        CAST(SUM(od.quantityOrdered) AS UNSIGNED) AS totalQuantity
+      FROM products p
+      JOIN orderdetails od ON p.productCode = od.productCode
+      GROUP BY p.productLine
+      ORDER BY totalRevenue DESC
+    `);
+
+    const totalRevAll = rows.reduce((sum, r) => sum + Number(r.totalRevenue), 0);
+
+    const formattedRows = rows.map((row) => {
+      const revenue = Number(row.totalRevenue);
+      return {
+        productLine: row.productLine,
+        name: row.productLine,
+        totalRevenue: revenue,
+        revenue,
+        totalQuantity: Number(row.totalQuantity),
+        percentage: totalRevAll > 0 ? Number(((revenue / totalRevAll) * 100).toFixed(1)) : 0,
+      };
+    });
+
+    res.json(formattedRows);
+  } catch (error) {
+    console.error('[Error] /api/revenue-by-productline:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve revenue by product line', details: error.message });
+  }
+});
+
+// Endpoint 5: Distribusi Status Pemenuhan Pesanan (Order Fulfillment Status)
+app.get('/api/order-status-distribution', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        status,
+        COUNT(orderNumber) AS totalOrders
+      FROM orders
+      GROUP BY status
+      ORDER BY totalOrders DESC
+    `);
+
+    const totalOrdersAll = rows.reduce((sum, r) => sum + Number(r.totalOrders), 0);
+
+    const formattedRows = rows.map((row) => {
+      const count = Number(row.totalOrders);
+      return {
+        status: row.status,
+        name: row.status,
+        totalOrders: count,
+        count,
+        percentage: totalOrdersAll > 0 ? Number(((count / totalOrdersAll) * 100).toFixed(1)) : 0,
+      };
+    });
+
+    res.json(formattedRows);
+  } catch (error) {
+    console.error('[Error] /api/order-status-distribution:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve order status distribution', details: error.message });
+  }
+});
+
+// Endpoint 6: Top 10 Pasar / Negara Berdasarkan Revenue
+app.get('/api/sales-by-country', async (req, res) => {
+  try {
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 10);
+
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        c.country,
+        COUNT(DISTINCT c.customerNumber) AS totalCustomers,
+        COUNT(DISTINCT o.orderNumber) AS totalOrders,
+        ROUND(SUM(od.quantityOrdered * od.priceEach), 2) AS totalRevenue
+      FROM customers c
+      JOIN orders o ON c.customerNumber = o.customerNumber
+      JOIN orderdetails od ON o.orderNumber = od.orderNumber
+      GROUP BY c.country
+      ORDER BY totalRevenue DESC
+      LIMIT ?
+      `,
+      [limit]
+    );
+
+    const formattedRows = rows.map((row) => ({
+      country: row.country,
+      name: row.country,
+      totalCustomers: Number(row.totalCustomers),
+      totalOrders: Number(row.totalOrders),
+      totalRevenue: Number(row.totalRevenue),
+      revenue: Number(row.totalRevenue),
+    }));
+
+    res.json(formattedRows);
+  } catch (error) {
+    console.error('[Error] /api/sales-by-country:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve sales by country', details: error.message });
+  }
+});
+
+// Endpoint 7: Leaderboard Top Sales Representative
+app.get('/api/top-sales-reps', async (req, res) => {
+  try {
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 6);
+
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        CONCAT(e.firstName, ' ', e.lastName) AS salesRepName,
+        e.jobTitle,
+        COUNT(DISTINCT c.customerNumber) AS totalClients,
+        COUNT(DISTINCT o.orderNumber) AS totalOrders,
+        ROUND(COALESCE(SUM(od.quantityOrdered * od.priceEach), 0), 2) AS totalRevenue
+      FROM employees e
+      JOIN customers c ON e.employeeNumber = c.salesRepEmployeeNumber
+      JOIN orders o ON c.customerNumber = o.customerNumber
+      JOIN orderdetails od ON o.orderNumber = od.orderNumber
+      GROUP BY e.employeeNumber, salesRepName, e.jobTitle
+      ORDER BY totalRevenue DESC
+      LIMIT ?
+      `,
+      [limit]
+    );
+
+    const formattedRows = rows.map((row) => ({
+      salesRepName: row.salesRepName,
+      name: row.salesRepName,
+      jobTitle: row.jobTitle,
+      totalClients: Number(row.totalClients),
+      totalOrders: Number(row.totalOrders),
+      totalRevenue: Number(row.totalRevenue),
+      revenue: Number(row.totalRevenue),
+    }));
+
+    res.json(formattedRows);
+  } catch (error) {
+    console.error('[Error] /api/top-sales-reps:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve top sales reps', details: error.message });
   }
 });
 
