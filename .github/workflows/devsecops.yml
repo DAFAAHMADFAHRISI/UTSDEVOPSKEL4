@@ -84,3 +84,20 @@ jobs:
           format: 'table'
           exit-code: '0'
           severity: 'HIGH,CRITICAL'
+
+  deploy-to-azure:
+    name: 🚀 Continuous Deployment to Azure VM
+    needs: [secret-scan, dependency-scan, sast-scan, container-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          script: |
+            cd ~/UTSDEVOPSKEL4
+            git pull origin main
+            docker compose up --build -d
