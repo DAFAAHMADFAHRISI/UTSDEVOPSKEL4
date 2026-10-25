@@ -174,7 +174,7 @@ function App() {
         <div className="header-actions">
           <div className="status-badge">
             <span className="status-dot"></span>
-            <span>API: Connected ({API_BASE_URL})</span>
+            <span>API: Connected</span>
           </div>
 
           <button
